@@ -20,13 +20,26 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node
+      # 带 pnpm 缓存（缓存的是 pnpm store，不是 node_modules）
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: pnpm
+          cache-dependency-path: |
+            **/pnpm-lock.yaml
+
+      # 显式安装 pnpm，避免 runner 环境不带 pnpm
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      - name: Show versions
+        run: |
+          node -v
+          pnpm -v
 
       - name: Install dependencies
-        run: npm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build production
         run: node build
@@ -51,4 +64,4 @@ jobs:
 
       - name: Summary
         run: |
-          echo "✅ Deployed commit \`${GITHUB_SHA::7}\` to \`build\` branch." >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ Cached pnpm store and deployed \`${GITHUB_SHA::7}\` to \`build\`." >> "$GITHUB_STEP_SUMMARY"
