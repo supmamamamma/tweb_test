@@ -1,14 +1,10 @@
 name: Build production & push to build
 
 on:
-  workflow_dispatch: {}   # 手动触发
+  workflow_dispatch: {}
 
 permissions:
   contents: write
-
-concurrency:
-  group: build-to-build-branch
-  cancel-in-progress: true
 
 jobs:
   build-and-publish:
@@ -20,23 +16,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      # 带 pnpm 缓存（缓存的是 pnpm store，不是 node_modules）
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
-          cache-dependency-path: |
-            **/pnpm-lock.yaml
 
-      # 显式安装 pnpm，避免 runner 环境不带 pnpm
-      - name: Install pnpm
-        run: npm install -g pnpm
-
-      - name: Show versions
+      # ✅ 使用 corepack 确保 pnpm 可用（Node 20 已内置 corepack）
+      - name: Enable corepack and install pnpm
         run: |
-          node -v
-          pnpm -v
+          corepack enable
+          corepack prepare pnpm@latest --activate
+          pnpm --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -64,4 +54,4 @@ jobs:
 
       - name: Summary
         run: |
-          echo "✅ Cached pnpm store and deployed \`${GITHUB_SHA::7}\` to \`build\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "✅ Deployed commit \`${GITHUB_SHA::7}\` to \`build\` branch." >> "$GITHUB_STEP_SUMMARY"
