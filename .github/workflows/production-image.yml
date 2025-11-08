@@ -1,68 +1,58 @@
-name: Docker Image Build CI
+name: Build production & push to build
 
 on:
-  push:
-    tags:
-      - 'tag/build-docker-image/*'
+  workflow_dispatch: {}   # 手动触发
+
+permissions:
+  contents: write         # 需要对仓库有写入权限以推送分支
+
+concurrency:
+  group: build-to-build-branch
+  cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-publish:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v2
         with:
-          node-version: '14'
+          fetch-depth: 0
 
-      - name: Read version from .env
-        id: env
-        run: echo "::set-output name=PRODUCTION_BUILD_VERSION::$(grep ^PRODUCTION_BUILD_VERSION= .env | cut -d'=' -f2)"
+      - name: Setup Node & pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Enable corepack (pnpm)
+        run: corepack enable
 
-      - name: Build the Docker image for latest
-        run: docker build -f ./.docker/Dockerfile_production -t ${{ vars.DOCKERHUB_USERNAME}}/tweb:latest .
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
 
-      - name: Build the Docker image for specific version
+      - name: Build production (node build)
+        run: node build
+
+      - name: Verify build output
         run: |
-          version=${{ steps.env.outputs.PRODUCTION_BUILD_VERSION }}
-          docker build -f ./.docker/Dockerfile_production -t ${{ vars.DOCKERHUB_USERNAME}}/tweb:${version} .
+          test -d public && test -f public/index.html || (echo "❌ Build output not found at ./public"; exit 1)
 
-      - name: Login to Docker Hub
-        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ vars.DOCKERHUB_USERNAME}}" --password-stdin
-
-      - name: Push versioned image
+      # 将 ./public 作为根提交到 build 分支（不带主分支历史）
+      - name: Publish ./public to build branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          version=${{ steps.env.outputs.PRODUCTION_BUILD_VERSION }}
-          docker push  ${{ vars.DOCKERHUB_USERNAME}}/tweb:${version}
+          cd public
+          git init
+          git config user.name  "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git add -A
+          git commit -m "Deploy from ${GITHUB_SHA}"
+          git branch -M build
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push -f origin build
 
-      - name: Push latest image
-
+      - name: Summary
         run: |
-          docker push ${{ vars.DOCKERHUB_USERNAME}}/tweb:latest
-
-
-  test:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Read version from .env
-        id: env
-        run: echo "::set-output name=PRODUCTION_BUILD_VERSION::$(grep ^PRODUCTION_BUILD_VERSION= .env | cut -d'=' -f2)"
-
-      - name: Pull versioned image
-        run: |
-          version=${{ steps.env.outputs.PRODUCTION_BUILD_VERSION }}
-          docker pull ${{ vars.DOCKERHUB_USERNAME}}/tweb:${version}
-
-      - name: Pull latest image
-        run: docker pull ${{ vars.DOCKERHUB_USERNAME}}/tweb:latest
+          echo "✅ Deployed commit \`${GITHUB_SHA::7}\` to \`build\` branch." >> "$GITHUB_STEP_SUMMARY"
