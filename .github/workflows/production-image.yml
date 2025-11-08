@@ -4,7 +4,7 @@ on:
   workflow_dispatch: {}   # 手动触发
 
 permissions:
-  contents: write         # 需要对仓库有写入权限以推送分支
+  contents: write
 
 concurrency:
   group: build-to-build-branch
@@ -20,25 +20,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node & pnpm
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: pnpm
-      - name: Enable corepack (pnpm)
-        run: corepack enable
 
-      - name: Install deps
-        run: pnpm install --frozen-lockfile
+      - name: Install dependencies
+        run: npm install
 
-      - name: Build production (node build)
+      - name: Build production
         run: node build
 
       - name: Verify build output
         run: |
           test -d public && test -f public/index.html || (echo "❌ Build output not found at ./public"; exit 1)
 
-      # 将 ./public 作为根提交到 build 分支（不带主分支历史）
       - name: Publish ./public to build branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
